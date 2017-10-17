@@ -9,9 +9,9 @@ public class GameInfo
         public float old;
         public int price;
         public string author;
-        public string imagePath;
+        public byte[] imageBytes;
 
-        public GameInfo(string name, string description, float popularity, float old, int price, string author, string imagePath)
+        public GameInfo(string name, string description, float popularity, float old, int price, string author)
         {
             this.name = name;
             this.description = description;
@@ -19,7 +19,6 @@ public class GameInfo
             this.old = old;
             this.price = price;
             this.author = author;
-            this.imagePath = imagePath;
         }
 
         public JSONNode SaveToJSON()
@@ -31,7 +30,7 @@ public class GameInfo
             node["old"] = old;
             node["price"] = price;
             node["author"] = author;
-            node["image"] = imagePath;
+            node["image"] = System.Text.Encoding.UTF8.GetString(imageBytes);
             return node;
         }
 }
