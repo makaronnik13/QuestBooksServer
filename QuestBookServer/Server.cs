@@ -20,6 +20,8 @@ class Server
         TcpClient clientSocket = default(TcpClient);
         int counter = 0;
 
+        BuyBook("lol", "Book2");
+
         serverSocket.Start();
 
         counter = 0;
@@ -38,29 +40,23 @@ class Server
         Console.ReadLine();
     }
 
-    //tests
-    private static void Login(string userName, string password)
+
+    public static int Login(string userName, string password)
     {
-        Byte[] sendBytes = null;
-
-        MySqlConnection connection = handleClinet.ConnectBase();
+        MySqlConnection connection = ConnectBase();
         connection.Open();
-
-        bool result = false;
-
-        string sql = "SELECT COUNT(Password) AS NmberOfUsers FROM users WHERE Name = " +"'"+userName +"'"+ " AND Password = " +"'"+ password+"'";
+        string sql = "SELECT COUNT(Password) AS NmberOfUsers FROM users WHERE Name = " + "'" + userName + "'" + " AND Password = " + "'" + password + "'";
         MySqlCommand sqlCom = new MySqlCommand(sql, connection);
-
+        connection.Close();
         if (Convert.ToInt32(sqlCom.ExecuteScalar()) != 0)
         {
-            result = true;
+            return 1;
         }
-
-        sendBytes = Encoding.ASCII.GetBytes(new JSONBool(result).ToString());
+        return 0;
     }
-    private static void TestBase(string userName)
+    public static void TestBase(string userName)
     {
-        MySqlConnection connection = handleClinet.ConnectBase();
+        MySqlConnection connection = hConnectBase();
         List<GameInfo> infos = new List<GameInfo>();
         connection.Open();
         string sql = "SELECT * FROM books"; // Строка запроса  
@@ -114,19 +110,145 @@ class Server
             booksArray.Add(gi.SaveToJSON());
         }
     }
-    private static void SignUp(string userName, string password)
+    public static void GetMoney(string userName)
     {
-        MySqlConnection connection = handleClinet.ConnectBase();
+        Byte[] sendBytes = null;
+        NetworkStream networkStream = clientSocket.GetStream();
+        sendBytes = Encoding.ASCII.GetBytes(GetMoneyValue(userName).ToString());
+        networkStream.Write(sendBytes, 0, sendBytes.Length);
+        networkStream.Flush();
+    }
+    public static int GetBookId(string bookName)
+    {
+        string sql = "SELECT * FROM books WHERE Name = " + "'" + bookName + "'";
+        MySqlConnection connection = ConnectBase();
         connection.Open();
-        int result = 1;
-        string sql = "SELECT COUNT(Password) AS NmberOfUsers FROM users WHERE Name = " + "'" + userName + "'";
+        MySqlCommand sqlCom = new MySqlCommand(sql, connection);
+        MySqlDataAdapter dataAdapter2 = new MySqlDataAdapter(sqlCom);
+        DataTable dt2 = new DataTable();
+        dataAdapter2.Fill(dt2);
+        var myData2 = dt2.Select();
+        connection.Close();
+
+        if (myData2.Length == 0)
+        {
+            return -1;
+        }
+
+        return (int)myData2[0].ItemArray[0];
+    }
+    public static int GetUserId(string username)
+    {
+        string sql = "SELECT * FROM users WHERE Name = " + "'" + username + "'";
+        MySqlConnection connection = ConnectBase();
+        connection.Open();
+        MySqlCommand sqlCom = new MySqlCommand(sql, connection);
+        MySqlDataAdapter dataAdapter2 = new MySqlDataAdapter(sqlCom);
+        DataTable dt2 = new DataTable();
+        dataAdapter2.Fill(dt2);
+        var myData2 = dt2.Select();
+        connection.Close();
+
+        if (myData2.Length==0)
+        {
+            return -1;
+        }
+
+        return (int)myData2[0].ItemArray[0];
+    }
+    public static int BookPrice(string bookName)
+    {
+        string sql = "SELECT Price FROM books WHERE Name = " + "'" + bookName + "'";
+        MySqlConnection connection = ConnectBase();
+        connection.Open();
+        MySqlCommand sqlCom = new MySqlCommand(sql, connection);
+        MySqlDataAdapter dataAdapter2 = new MySqlDataAdapter(sqlCom);
+        DataTable dt2 = new DataTable();
+        dataAdapter2.Fill(dt2);
+        var myData2 = dt2.Select();
+        connection.Close();
+
+        if (myData2.Length == 0)
+        {
+            return -1;
+        }
+
+        return (int)myData2[0].ItemArray[0];
+    }
+    public static void AddMoney(string username, int bookPrice)
+    {
+        string sql = "UPDATE users SET Money=Money+" + bookPrice + " WHERE Name = " + "'" + username + "'";
+        MySqlConnection connection = ConnectBase();
+        connection.Open();
+        MySqlCommand sqlCom = new MySqlCommand(sql, connection);
+        sqlCom.ExecuteNonQuery();
+        connection.Close();
+    }
+    public static int GetMoneyValue(string userName)
+    {
+        string sql = "SELECT Money FROM users WHERE Name = " + "'" + userName + "'";
+        MySqlConnection connection = ConnectBase();
+        connection.Open();
         MySqlCommand sqlCom = new MySqlCommand(sql, connection);
 
-        Console.WriteLine(Convert.ToInt32(sqlCom.ExecuteScalar()));
+        MySqlDataAdapter dataAdapter2 = new MySqlDataAdapter(sqlCom);
+        DataTable dt2 = new DataTable();
+        dataAdapter2.Fill(dt2);
+        var myData2 = dt2.Select();
+        connection.Close();
 
+        if (myData2.Length != 0)
+        {
+            return (int)myData2[0].ItemArray[0];
+        }
+        return 0;
+    }
+    public static void SetBookBought(string username, string bookName)
+    {
+
+        string sql = "INSERT INTO usersbooks (Users_idUsers, Books_idBooks) VALUES(@userId, @bookId)";
+        MySqlConnection connection = ConnectBase();
+        connection.Open();
+        MySqlCommand sqlCom = new MySqlCommand(sql, connection);
+        sqlCom.Parameters.AddWithValue("@userId", GetUserId(username));
+        sqlCom.Parameters.AddWithValue("@bookId", GetBookId(bookName));
+        sqlCom.ExecuteNonQuery();
+        connection.Close();
+    }
+    public static int BuyBook(string username, string bookName)
+    {
+        int bookPrice = BookPrice(bookName);
+        if (bookPrice <= GetMoneyValue(username))
+        {
+            AddMoney(username, -bookPrice);
+
+            SetBookBought(username, bookName);
+
+            return 1;
+        }
+        else
+        {
+            return 0;
+        }
+    }
+    public static byte[] GetImage(string bookName)
+    {
+        
+        string booksDirrectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Books");
+        string bookDirrectory = Path.Combine(booksDirrectory, bookName);
+        string imagePath = Directory.GetFiles(bookDirrectory).ToList().Find(s => s.EndsWith(".png") || s.EndsWith(".jpg"));
+        return File.ReadAllBytes(imagePath);
+    }
+    public static int SignUp(string userName, string password)
+    { 
+        MySqlConnection connection = ConnectBase();
+        connection.Open();
+        string sql = "SELECT COUNT(Password) AS NmberOfUsers FROM users WHERE Name = " + "'" + userName + "'";
+        MySqlCommand sqlCom = new MySqlCommand(sql, connection);
         if (Convert.ToInt32(sqlCom.ExecuteScalar()) != 0)
         {
-            result = 0;
+            connection.Close();
+            return 0;
         }
         else
         {
@@ -136,10 +258,112 @@ class Server
             command.Parameters.AddWithValue("@Password", password);
             command.Parameters.AddWithValue("@Money", Server.baseMoney);
             command.ExecuteNonQuery();
+            connection.Close();
+        }
+        return 1;
+    }
+    public static byte[] GetBooksList(string userName)
+    {
+        byte[] sendBytes = null;
+        List<GameInfo> infos = new List<GameInfo>();
+        MySqlConnection connection = ConnectBase();
+        connection.Open();
+        string sql = "SELECT * FROM books"; // Строка запроса  
+        MySqlCommand sqlCom = new MySqlCommand(sql, connection);
+        sqlCom.ExecuteNonQuery();
+        MySqlDataAdapter dataAdapter = new MySqlDataAdapter(sqlCom);
+        DataTable dt = new DataTable();
+        dataAdapter.Fill(dt);
+        var myData = dt.Select();
+        for (int i = 0; i < myData.Length; i++)
+        {
+            string sql2 = "SELECT Name FROM authors WHERE idAuthors =" + (int)myData[i].ItemArray[6];
+            MySqlCommand sqlCom2 = new MySqlCommand(sql2, connection);
+            sqlCom2.ExecuteNonQuery();
+            MySqlDataAdapter dataAdapter2 = new MySqlDataAdapter(sqlCom2);
+            DataTable dt2 = new DataTable();
+            dataAdapter2.Fill(dt2);
+            var myData2 = dt2.Select();
+            string sql4 = "SELECT idUsers FROM users WHERE Name = '" + userName + "'";
+            MySqlCommand sqlCom4 = new MySqlCommand(sql4, connection);
+            sqlCom4.ExecuteNonQuery();
+            MySqlDataAdapter dataAdapter4 = new MySqlDataAdapter(sqlCom4);
+            DataTable dt4 = new DataTable();
+            dataAdapter4.Fill(dt4);
+            var myData4 = dt4.Select();
+            string sql3 = "SELECT COUNT(idUsersBooks) AS NmberOfBooks FROM usersbooks WHERE books_idBooks = " + (int)myData[i].ItemArray[0] + " AND Users_idUsers = " + (int)myData4[0].ItemArray[0];
+            MySqlCommand sqlCom3 = new MySqlCommand(sql3, connection);
+            long time = ((DateTime)myData[i].ItemArray[5]).ToFileTime();
+            string author = myData2[0].ItemArray[0].ToString();
+            GameInfo gi = new GameInfo(myData[i].ItemArray[1].ToString(), myData[i].ItemArray[2].ToString(), (int)myData[i].ItemArray[3], (float)myData[i].ItemArray[4], time, author);
+            if (Convert.ToInt32(sqlCom3.ExecuteScalar()) != 0)
+            {
+                gi.bought = true;
+            }
+            infos.Add(gi);
         }
 
-        Console.WriteLine(result);
+        JSONArray booksArray = new JSONArray();
+        foreach (GameInfo gi in infos)
+        {
+            booksArray.Add(gi.SaveToJSON());
+        }
         connection.Close();
+
+        return Encoding.ASCII.GetBytes(booksArray.ToString());
+    }
+
+    //not released
+    public static int BuyBonuce(string username, string bonuceId)
+    {
+        int bonucePrice = BonucePrice(int.Parse(bonuceId));
+        if (bonucePrice <= GetMoneyValue(username))
+        {
+            AddMoney(username, -bonucePrice);
+
+            if (int.Parse(bonuceId)>3)
+            {
+
+            }
+            SetBonuceBought(username, bonuceId);
+
+            return 1;
+        }
+        else
+        {
+            return 0;
+        }
+    }
+
+    private static int BonucePrice(int v)
+    {
+        throw new NotImplementedException();
+    }
+
+    private static void SetBonuceBought(string username, string bonuceId)
+    {
+        throw new NotImplementedException();
+    }
+
+    public static byte[] DownloadBook(string bookName)
+    {
+        return new byte[2];
+    }
+
+    private static MySqlConnection ConnectBase()
+    {
+        string serverName = "127.0.0.1"; // Адрес сервера (для локальной базы пишите "localhost")
+        string userName = "root"; // Имя пользователя
+        string dbName = "questbooksdatabase"; //Имя базы данных
+        string port = "3306"; // Порт для подключения
+        string password = "131094Nik"; // Пароль для подключения
+        string connStr = "server=" + serverName +
+            ";user=" + userName +
+            ";database=" + dbName +
+            ";port=" + port +
+            ";password=" + password +
+            ";SslMode=none;";
+        return new MySqlConnection(connStr);
     }
 }
 
@@ -208,6 +432,18 @@ public class handleClinet
                         case "GetImage":
                             GetImage(methodAndParams[1]);
                             break;
+                        case "Money":
+                            GetMoney(methodAndParams[1]);
+                            break;
+                        case "BuyBook":
+                            BuyBook(methodAndParams[1], methodAndParams[2]);
+                            break;
+                        case "BuyBonuce":
+                            BuyBonuce(methodAndParams[1], methodAndParams[2]);
+                            break;
+                        case "DownloadBook":
+                            DownloadBook(methodAndParams[1]);
+                            break;
                     }
                 }
 
@@ -219,172 +455,61 @@ public class handleClinet
         }
     }
 
+    private void DownloadBook(string bookName)
+    {
+        NetworkStream networkStream = clientSocket.GetStream();
+        byte[] result = Server.DownloadBook(bookName);
+        networkStream.Write(result, 0, result.Length);
+        networkStream.Flush();
+    }
+
+    private void BuyBonuce(string userName, string bonuceId)
+    {
+        NetworkStream networkStream = clientSocket.GetStream();
+        networkStream.Write(Encoding.ASCII.GetBytes(Server.BuyBonuce(userName, bonuceId).ToString()), 0, Encoding.ASCII.GetBytes(1.ToString()).Length);
+        networkStream.Flush();
+    }
+
+    private void BuyBook(string userName, string bookName)
+    {
+        NetworkStream networkStream = clientSocket.GetStream();
+        networkStream.Write(Encoding.ASCII.GetBytes(Server.BuyBook(userName,bookName).ToString()), 0, Encoding.ASCII.GetBytes(1.ToString()).Length);
+        networkStream.Flush();
+    }
     private void GetImage(string bookName)
     {
-        Byte[] sendBytes = null;
         NetworkStream networkStream = clientSocket.GetStream();
-        MySqlConnection connection = ConnectBase();
-        connection.Open();
-
-        string booksDirrectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Books");
-        string bookDirrectory = Path.Combine(booksDirrectory, bookName);
-        string imagePath = Directory.GetFiles(bookDirrectory).ToList().Find(s => s.EndsWith(".png") || s.EndsWith(".jpg"));
-
-        byte[] result = File.ReadAllBytes(imagePath);
-
-        sendBytes = Encoding.ASCII.GetBytes(result.ToString());
-        networkStream.Write(sendBytes, 0, sendBytes.Length);
+        byte[] result = Server.GetImage(bookName);
+        networkStream.Write(result, 0, result.Length);
         networkStream.Flush();
-        connection.Close();
     }
-
     private void Login(string userName, string password)
     {
-        Byte[] sendBytes = null;
         NetworkStream networkStream = clientSocket.GetStream();
-        MySqlConnection connection = ConnectBase();
-        connection.Open();
-
-        int result = 0;
-
-        string sql = "SELECT COUNT(Password) AS NmberOfUsers FROM users WHERE Name = " + "'" + userName + "'" + " AND Password = " + "'" + password + "'";
-        MySqlCommand sqlCom = new MySqlCommand(sql, connection);
-
-        if (Convert.ToInt32(sqlCom.ExecuteScalar()) != 0)
-        {
-            result = 1;
-        }
-    
-        sendBytes = Encoding.ASCII.GetBytes(result.ToString());
+        byte[] sendBytes = Encoding.ASCII.GetBytes(Server.Login(userName, password).ToString());
         networkStream.Write(sendBytes, 0, sendBytes.Length);
-        networkStream.Flush();
-        connection.Close();
+        networkStream.Flush();   
     }
-
     private void SignUp(string userName, string password)
     {
-        Byte[] sendBytes = null;
         NetworkStream networkStream = clientSocket.GetStream();
-        MySqlConnection connection = ConnectBase();
-        connection.Open();
-        int result = 1;
-        string sql = "SELECT COUNT(Password) AS NmberOfUsers FROM users WHERE Name = " + "'" + userName + "'";
-        MySqlCommand sqlCom = new MySqlCommand(sql, connection);
-
-
-        Console.WriteLine(sqlCom.ExecuteScalar());
-
-        if (Convert.ToInt32(sqlCom.ExecuteScalar()) != 0)
-        {
-            result = 0;
-        }
-        else
-        {
-            MySqlCommand command = connection.CreateCommand();
-            command.CommandText = "INSERT INTO users (Name, Password, Money) VALUES (@Name, @Password, @Money)";
-            command.Parameters.AddWithValue("@Name", userName);
-            command.Parameters.AddWithValue("@Password", password);
-            command.Parameters.AddWithValue("@Money", Server.baseMoney);
-            command.ExecuteNonQuery();
-
-            Console.WriteLine("user created");
-        }
-
-        sendBytes = Encoding.ASCII.GetBytes(result.ToString());
+        byte[] sendBytes = Encoding.ASCII.GetBytes(Server.SignUp(userName, password).ToString());
         networkStream.Write(sendBytes, 0, sendBytes.Length);
         networkStream.Flush();
-        connection.Close();
     }
     private void GetBooksList(string userName)
     {
-        Byte[] sendBytes = null;
         NetworkStream networkStream = clientSocket.GetStream();
-        List<GameInfo> infos = new List<GameInfo>();
-        MySqlConnection connection = ConnectBase();
-        
-        connection.Open();
-
-        string sql = "SELECT * FROM books"; // Строка запроса  
-        MySqlCommand sqlCom = new MySqlCommand(sql, connection);
-        sqlCom.ExecuteNonQuery();
-        MySqlDataAdapter dataAdapter = new MySqlDataAdapter(sqlCom);
-        DataTable dt = new DataTable();
-        dataAdapter.Fill(dt);
-        var myData = dt.Select();
-        for (int i = 0; i < myData.Length; i++)
-        {
-            string sql2 = "SELECT Name FROM authors WHERE idAuthors =" + (int)myData[i].ItemArray[6];
-            MySqlCommand sqlCom2 = new MySqlCommand(sql2, connection);
-            sqlCom2.ExecuteNonQuery();
-            MySqlDataAdapter dataAdapter2 = new MySqlDataAdapter(sqlCom2);
-            DataTable dt2 = new DataTable();
-            dataAdapter2.Fill(dt2);
-            var myData2 = dt2.Select();
-
-            string sql4 = "SELECT idUsers FROM users WHERE Name = '" + userName + "'";
-            MySqlCommand sqlCom4 = new MySqlCommand(sql4, connection);
-            sqlCom4.ExecuteNonQuery();
-            MySqlDataAdapter dataAdapter4 = new MySqlDataAdapter(sqlCom4);
-            DataTable dt4 = new DataTable();
-            dataAdapter4.Fill(dt4);
-            var myData4 = dt4.Select();
-
-            string sql3 = "SELECT COUNT(idUsersBooks) AS NmberOfBooks FROM usersbooks WHERE books_idBooks = " + (int)myData[i].ItemArray[0] + " AND Users_idUsers = " + (int)myData4[0].ItemArray[0];
-            MySqlCommand sqlCom3 = new MySqlCommand(sql3, connection);
-
-            long time = ((DateTime)myData[i].ItemArray[5]).ToFileTime();
-            string author = myData2[0].ItemArray[0].ToString();
-            GameInfo gi = new GameInfo(myData[i].ItemArray[1].ToString(), myData[i].ItemArray[2].ToString(), (int)myData[i].ItemArray[3], (float)myData[i].ItemArray[4], time, author);
-           
-            if (Convert.ToInt32(sqlCom3.ExecuteScalar()) != 0)
-            {
-                gi.bought = true;
-            }
-            infos.Add(gi);
-        }
-
-        JSONArray booksArray = new JSONArray();
-        foreach (GameInfo gi in infos)
-        {
-            booksArray.Add(gi.SaveToJSON());
-        }
-
-
-        sendBytes = Encoding.ASCII.GetBytes(booksArray.ToString());
-
+        byte[] sendBytes = Server.GetBooksList(userName);
         networkStream.Write(sendBytes, 0, sendBytes.Length);
         networkStream.Flush();
-        connection.Close();
     }
-
-    private void BuyBook(string bookName)
+    private void GetMoney(string userName)
     {
-
+        NetworkStream networkStream = clientSocket.GetStream();
+        byte[] sendBytes = Encoding.ASCII.GetBytes(Server.GetMoneyValue(userName).ToString());
+        networkStream.Write(sendBytes, 0, sendBytes.Length);
+        networkStream.Flush();
     }
 
-    private void BuyBonus(string bonusId)
-    {
-
-    }
-
-    private void RecieveMoney(string value)
-    {
-
-    }
-
-    public static MySqlConnection ConnectBase()
-    {
-        string serverName = "127.0.0.1"; // Адрес сервера (для локальной базы пишите "localhost")
-        string userName = "root"; // Имя пользователя
-        string dbName = "questbooksdatabase"; //Имя базы данных
-        string port = "3306"; // Порт для подключения
-        string password = "131094Nik"; // Пароль для подключения
-        string connStr = "server=" + serverName +
-            ";user=" + userName +
-            ";database=" + dbName +
-            ";port=" + port +
-            ";password=" + password +
-            ";SslMode=none;";
-        return new MySqlConnection(connStr);
-    }
 }
