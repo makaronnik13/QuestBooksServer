@@ -29,7 +29,8 @@ public class GameInfo
             node["popularity"] = popularity;
             node["old"] = old;
             node["price"] = price;
-            node["author"] = author;   
+            node["author"] = author;
+            node["bought"] = bought;
             return node;
         }
 }

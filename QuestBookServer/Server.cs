@@ -2,7 +2,6 @@
 using System.Text;
 using System.Net.Sockets;
 using System.Threading;
-using System.Reflection;
 using System.Linq;
 using System.Collections.Generic;
 using SimpleJSON;
@@ -20,16 +19,12 @@ class Server
         TcpClient clientSocket = default(TcpClient);
         int counter = 0;
 
-        BuyBook("lol", "Book2");
-
         serverSocket.Start();
-
         counter = 0;
         while (true)
         {
             counter += 1;
-            clientSocket = serverSocket.AcceptTcpClient();
-            Console.WriteLine(" >> " + "Client No:" + Convert.ToString(counter) + " started!");
+            clientSocket = serverSocket.AcceptTcpClient();  
             handleClinet client = new handleClinet();
             client.startClient(clientSocket, Convert.ToString(counter));
         }
@@ -47,16 +42,17 @@ class Server
         connection.Open();
         string sql = "SELECT COUNT(Password) AS NmberOfUsers FROM users WHERE Name = " + "'" + userName + "'" + " AND Password = " + "'" + password + "'";
         MySqlCommand sqlCom = new MySqlCommand(sql, connection);
-        connection.Close();
+        int result = 0;
         if (Convert.ToInt32(sqlCom.ExecuteScalar()) != 0)
         {
-            return 1;
+            result = 1;
         }
-        return 0;
+        connection.Close();
+        return result;
     }
     public static void TestBase(string userName)
     {
-        MySqlConnection connection = hConnectBase();
+        MySqlConnection connection = ConnectBase();
         List<GameInfo> infos = new List<GameInfo>();
         connection.Open();
         string sql = "SELECT * FROM books"; // Строка запроса  
@@ -110,14 +106,7 @@ class Server
             booksArray.Add(gi.SaveToJSON());
         }
     }
-    public static void GetMoney(string userName)
-    {
-        Byte[] sendBytes = null;
-        NetworkStream networkStream = clientSocket.GetStream();
-        sendBytes = Encoding.ASCII.GetBytes(GetMoneyValue(userName).ToString());
-        networkStream.Write(sendBytes, 0, sendBytes.Length);
-        networkStream.Flush();
-    }
+
     public static int GetBookId(string bookName)
     {
         string sql = "SELECT * FROM books WHERE Name = " + "'" + bookName + "'";
@@ -296,7 +285,10 @@ class Server
             long time = ((DateTime)myData[i].ItemArray[5]).ToFileTime();
             string author = myData2[0].ItemArray[0].ToString();
             GameInfo gi = new GameInfo(myData[i].ItemArray[1].ToString(), myData[i].ItemArray[2].ToString(), (int)myData[i].ItemArray[3], (float)myData[i].ItemArray[4], time, author);
-            if (Convert.ToInt32(sqlCom3.ExecuteScalar()) != 0)
+
+            int r = Convert.ToInt32(sqlCom3.ExecuteScalar());
+
+            if (r != 0)
             {
                 gi.bought = true;
             }
@@ -312,43 +304,95 @@ class Server
 
         return Encoding.ASCII.GetBytes(booksArray.ToString());
     }
-
-    //not released
-    public static int BuyBonuce(string username, string bonuceId)
+    public static void SetBonuceBought(string username, string bonuceId)
     {
-        int bonucePrice = BonucePrice(int.Parse(bonuceId));
-        if (bonucePrice <= GetMoneyValue(username))
+        switch (int.Parse(bonuceId))
         {
-            AddMoney(username, -bonucePrice);
-
-            if (int.Parse(bonuceId)>3)
-            {
-
-            }
-            SetBonuceBought(username, bonuceId);
-
-            return 1;
+            case 0:
+                AddMoney(username, 100);
+                break;
+            case 1:
+                AddMoney(username, 250);
+                break;
+            case 2:
+                AddMoney(username, 500);
+                break;
+            case 3:
+                AddMoney(username, 1000);
+                break;
+            case 4:
+                RemoveAdds(username);
+                break;
+            case 5:
+                MakePremium(username);
+                break;
         }
-        else
+    }
+    private static void MakePremium(string username)
+    {
+        string sql = "UPDATE users SET Premium = 1" + " WHERE Name = " + "'" + username + "'";
+        MySqlConnection connection = ConnectBase();
+        connection.Open();
+        MySqlCommand sqlCom = new MySqlCommand(sql, connection);
+        sqlCom.ExecuteNonQuery();
+        connection.Close();
+    }
+    private static void RemoveAdds(string username)
+    {
+        string sql = "UPDATE users SET NoAdds = 1" + " WHERE Name = " + "'" + username + "'";
+        MySqlConnection connection = ConnectBase();
+        connection.Open();
+        MySqlCommand sqlCom = new MySqlCommand(sql, connection);
+        sqlCom.ExecuteNonQuery();
+        connection.Close();
+    }
+    public static int IsPremium(string username)
+    {
+        string sql = "SELECT Premium FROM users WHERE Name = " + "'" + username + "'";
+        MySqlConnection connection = ConnectBase();
+        connection.Open();
+        MySqlCommand sqlCom = new MySqlCommand(sql, connection);
+        MySqlDataAdapter dataAdapter2 = new MySqlDataAdapter(sqlCom);
+        DataTable dt2 = new DataTable();
+        dataAdapter2.Fill(dt2);
+        var myData2 = dt2.Select();
+        connection.Close();
+
+        if (myData2.Length == 0)
         {
-            return 0;
+            return -1;
         }
-    }
 
-    private static int BonucePrice(int v)
+        return (int)myData2[0].ItemArray[0];
+    }
+    public static int HasAddBlock(string username)
     {
-        throw new NotImplementedException();
-    }
+        string sql = "SELECT NoAdds FROM users WHERE Name = " + "'" + username + "'";
+        MySqlConnection connection = ConnectBase();
+        connection.Open();
+        MySqlCommand sqlCom = new MySqlCommand(sql, connection);
+        MySqlDataAdapter dataAdapter2 = new MySqlDataAdapter(sqlCom);
+        DataTable dt2 = new DataTable();
+        dataAdapter2.Fill(dt2);
+        var myData2 = dt2.Select();
+        connection.Close();
 
-    private static void SetBonuceBought(string username, string bonuceId)
-    {
-        throw new NotImplementedException();
-    }
+        if (myData2.Length == 0)
+        {
+            return -1;
+        }
 
+        return (int)myData2[0].ItemArray[0];
+    }
     public static byte[] DownloadBook(string bookName)
     {
-        return new byte[2];
+        string booksDirrectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Books");
+        string bookDirrectory = Path.Combine(booksDirrectory, bookName);
+        string bundlePath = Directory.GetFiles(bookDirrectory).ToList().Find(s => s.EndsWith(".pgb"));
+        return File.ReadAllBytes(bundlePath);
     }
+
+
 
     private static MySqlConnection ConnectBase()
     {
@@ -376,38 +420,37 @@ public class handleClinet
     {
         this.clientSocket = inClientSocket;
         this.clNo = clineNo;
-
-        doChat();
-
-        //return thread after finish debug!!!
-        //Thread ctThread = new Thread(doChat);
-        //ctThread.Start();
+        Thread ctThread = new Thread(doChat);
+        ctThread.Start();
     }
+
     private void doChat()
     {
+        Console.WriteLine("__________________________________");
         int requestCount = 0;
         byte[] bytesFrom = new byte[clientSocket.ReceiveBufferSize];
         string dataFromClient = null;
         requestCount = 0;
-        
-        while ((clientSocket.Connected))
+
+        if (!clientSocket.Connected)
+        {
+            return;
+        }
+        NetworkStream outStream = clientSocket.GetStream();
+        NetworkStream inStream = clientSocket.GetStream();
+        byte[] result = new byte[0];
+
+        bool finished = false;
+
+        while (!finished)
         {
             try
             {
                 requestCount = requestCount + 1;
-                NetworkStream networkStream = clientSocket.GetStream();
-                if (!clientSocket.Connected)
-                {
-                    break;
-                }
-
-                networkStream.Read(bytesFrom, 0, bytesFrom.Length);
-
-                
-
+                inStream.Read(bytesFrom, 0, bytesFrom.Length);            
                 dataFromClient = Encoding.ASCII.GetString(bytesFrom);
                 dataFromClient = dataFromClient.Substring(0, dataFromClient.IndexOf("$"));
-
+  
                 Console.WriteLine(dataFromClient);
 
                 if (dataFromClient.StartsWith("@"))
@@ -416,100 +459,98 @@ public class handleClinet
                     string commandName = methodAndParams[0];
                     List<string> methodAndParamsList = methodAndParams.ToList();
                     methodAndParamsList.RemoveAt(0);
-                    commandName = commandName.Replace("@", "");
-                    Console.WriteLine(commandName);
+                    commandName = commandName.Replace("@", ""); 
                     switch (commandName)
                     {
                         case "GetBooksList":
-                            GetBooksList(methodAndParams[1]);
+                            result = GetBooksList(methodAndParams[1]);
                             break;
                         case "Login":
-                            Login(methodAndParams[1], methodAndParams[2]);
+                            result = Login(methodAndParams[1], methodAndParams[2]);
                             break;
                         case "SignUp":
-                            SignUp(methodAndParams[1], methodAndParams[2]);
+                            result = SignUp(methodAndParams[1], methodAndParams[2]);
                             break;
                         case "GetImage":
-                            GetImage(methodAndParams[1]);
+                            result = GetImage(methodAndParams[1]);
                             break;
                         case "Money":
-                            GetMoney(methodAndParams[1]);
+                            result = GetMoney(methodAndParams[1]);
                             break;
                         case "BuyBook":
-                            BuyBook(methodAndParams[1], methodAndParams[2]);
+                            result = BuyBook(methodAndParams[1], methodAndParams[2]);
                             break;
                         case "BuyBonuce":
                             BuyBonuce(methodAndParams[1], methodAndParams[2]);
                             break;
                         case "DownloadBook":
-                            DownloadBook(methodAndParams[1]);
+                            result = DownloadBook(methodAndParams[1]);
                             break;
-                    }
+                        case "IsPremium":
+                            result = IsPremium(methodAndParams[1]);
+                            break;
+                        case "HasAddBlock":
+                            result = HasAddBlock(methodAndParams[1]);
+                            break;
+                    }      
                 }
 
+                outStream.Write(result, 0, result.Length);
+                outStream.Flush();
+                finished = true;
             }
             catch (Exception ex)
             {
+                finished = true;
                  //Console.WriteLine(" >> " + ex.ToString());
             }
         }
+        clientSocket.Close();
     }
 
-    private void DownloadBook(string bookName)
+    private byte[] HasAddBlock(string username)
     {
-        NetworkStream networkStream = clientSocket.GetStream();
-        byte[] result = Server.DownloadBook(bookName);
-        networkStream.Write(result, 0, result.Length);
-        networkStream.Flush();
+        return Encoding.ASCII.GetBytes(Server.HasAddBlock(username).ToString());
+    }
+
+    private byte[] IsPremium(string username)
+    {       
+        return Encoding.ASCII.GetBytes(Server.IsPremium(username).ToString());
+    }
+
+    private byte[] DownloadBook(string bookName)
+    {
+        return Server.DownloadBook(bookName);
     }
 
     private void BuyBonuce(string userName, string bonuceId)
-    {
-        NetworkStream networkStream = clientSocket.GetStream();
-        networkStream.Write(Encoding.ASCII.GetBytes(Server.BuyBonuce(userName, bonuceId).ToString()), 0, Encoding.ASCII.GetBytes(1.ToString()).Length);
-        networkStream.Flush();
+    {      
+        Server.SetBonuceBought(userName, bonuceId);
     }
 
-    private void BuyBook(string userName, string bookName)
-    {
-        NetworkStream networkStream = clientSocket.GetStream();
-        networkStream.Write(Encoding.ASCII.GetBytes(Server.BuyBook(userName,bookName).ToString()), 0, Encoding.ASCII.GetBytes(1.ToString()).Length);
-        networkStream.Flush();
+    private byte[] BuyBook(string userName, string bookName)
+    {    
+        return Encoding.ASCII.GetBytes(Server.BuyBook(userName, bookName).ToString());
     }
-    private void GetImage(string bookName)
+    private byte[] GetImage(string bookName)
     {
-        NetworkStream networkStream = clientSocket.GetStream();
-        byte[] result = Server.GetImage(bookName);
-        networkStream.Write(result, 0, result.Length);
-        networkStream.Flush();
+        return Server.GetImage(bookName);
     }
-    private void Login(string userName, string password)
+    private byte[] Login(string userName, string password)
     {
-        NetworkStream networkStream = clientSocket.GetStream();
-        byte[] sendBytes = Encoding.ASCII.GetBytes(Server.Login(userName, password).ToString());
-        networkStream.Write(sendBytes, 0, sendBytes.Length);
-        networkStream.Flush();   
+        return Encoding.ASCII.GetBytes(Server.Login(userName, password).ToString());
     }
-    private void SignUp(string userName, string password)
+    private byte[] SignUp(string userName, string password)
     {
-        NetworkStream networkStream = clientSocket.GetStream();
-        byte[] sendBytes = Encoding.ASCII.GetBytes(Server.SignUp(userName, password).ToString());
-        networkStream.Write(sendBytes, 0, sendBytes.Length);
-        networkStream.Flush();
+        return Encoding.ASCII.GetBytes(Server.SignUp(userName, password).ToString());  
     }
-    private void GetBooksList(string userName)
+    private byte[] GetBooksList(string userName)
     {
-        NetworkStream networkStream = clientSocket.GetStream();
-        byte[] sendBytes = Server.GetBooksList(userName);
-        networkStream.Write(sendBytes, 0, sendBytes.Length);
-        networkStream.Flush();
+        return Server.GetBooksList(userName);
     }
-    private void GetMoney(string userName)
+    private byte[] GetMoney(string userName)
     {
-        NetworkStream networkStream = clientSocket.GetStream();
-        byte[] sendBytes = Encoding.ASCII.GetBytes(Server.GetMoneyValue(userName).ToString());
-        networkStream.Write(sendBytes, 0, sendBytes.Length);
-        networkStream.Flush();
+        return Encoding.ASCII.GetBytes(Server.GetMoneyValue(userName).ToString());
     }
 
 }
